@@ -40,7 +40,7 @@ help, but dev performance went down for each variation of
 logger = logging.getLogger('stanza')
 
 class CNNClassifier(nn.Module):
-    def __init__(self, pretrain, extra_vocab, labels,
+    def __init__(self, pretrain, extra_vocab, labels, elmo_model,
                  charmodel_forward, charmodel_backward,
                  args):
         """
@@ -60,6 +60,8 @@ class CNNClassifier(nn.Module):
         super(CNNClassifier, self).__init__()
         self.labels = labels
         # we build a separate config out of the args so that we can easily save it in torch
+        # TODO: this can be removed sometime after all models are rebuilt
+        use_elmo = getattr(args, 'use_elmo', False)
         self.config = SimpleNamespace(filter_channels = args.filter_channels,
                                       filter_sizes = args.filter_sizes,
                                       fc_shapes = args.fc_shapes,
@@ -71,6 +73,7 @@ class CNNClassifier(nn.Module):
                                       extra_wordvec_max_norm = args.extra_wordvec_max_norm,
                                       char_lowercase = args.char_lowercase,
                                       charlm_projection = args.charlm_projection,
+                                      use_elmo = use_elmo,
                                       model_type = 'CNNClassifier')
 
         if args.char_lowercase:
@@ -82,6 +85,7 @@ class CNNClassifier(nn.Module):
 
         emb_matrix = pretrain.emb
         self.add_unsaved_module('embedding', nn.Embedding.from_pretrained(torch.from_numpy(emb_matrix), freeze=True))
+        self.add_unsaved_module('elmo_model', elmo_model)
         self.vocab_size = emb_matrix.shape[0]
         self.embedding_dim = emb_matrix.shape[1]
 
@@ -152,6 +156,11 @@ class CNNClassifier(nn.Module):
                 self.charmodel_backward_projection = None
                 total_embedding_dim += charmodel_backward.hidden_dim()
 
+        if self.config.use_elmo:
+            # TODO: add the ability to map this to a different dimension?
+            elmo_dim = elmo_model.sents2elmo([["Test"]])[0].shape[1]
+            total_embedding_dim = total_embedding_dim + elmo_dim
+
         self.conv_layers = nn.ModuleList([nn.Conv2d(in_channels=1,
                                                     out_channels=self.config.filter_channels,
                                                     kernel_size=(filter_size, total_embedding_dim))
@@ -215,10 +224,14 @@ class CNNClassifier(nn.Module):
         batch_indices = []
         batch_unknowns = []
         extra_batch_indices = []
+
         batch_forward_chars = []
         batch_forward_offsets = []
         batch_backward_chars = []
         batch_backward_offsets = []
+
+        elmo_batch_words = []
+
         for phrase in inputs:
             # we use random at training time to try to learn different
             # positions of padding.  at test time, though, we want to
@@ -312,6 +325,13 @@ class CNNClassifier(nn.Module):
                 batch_backward_chars.append(chars)
                 batch_backward_offsets.append(offsets)
 
+            if self.config.use_elmo:
+                elmo_phrase_words = [""] * begin_pad_width
+                for word in phrase:
+                    elmo_phrase_words.append(word)
+                elmo_phrase_words.extend([""] * end_pad_width)
+                elmo_batch_words.append(elmo_phrase_words)
+
         # creating a single large list with all the indices lets us
         # create a single tensor, which is much faster than creating
         # many tiny tensors
@@ -350,6 +370,12 @@ class CNNClassifier(nn.Module):
         if self.charmodel_backward is not None:
             char_reps_backward = self.build_char_reps(batch_backward_chars, batch_backward_offsets, device, forward=False)
             all_inputs.append(char_reps_backward)
+
+        if self.config.use_elmo:
+            elmo_arrays = self.elmo_model.sents2elmo(elmo_batch_words)
+            elmo_tensors = [torch.tensor(x).to(device=device) for x in elmo_arrays]
+            elmo_tensor = torch.stack(elmo_tensors)
+            all_inputs.append(elmo_tensor)
 
         if len(all_inputs) > 1:
             input_vectors = torch.cat(all_inputs, dim=2)
@@ -395,7 +421,7 @@ def save(filename, model, skip_modules=True):
     except BaseException as e:
         logger.warning("Saving failed to {}... continuing anyway.  Error: {}".format(filename, e))
 
-def load(filename, pretrain, charmodel_forward, charmodel_backward):
+def load(filename, pretrain, elmo_model, charmodel_forward, charmodel_backward):
     try:
         checkpoint = torch.load(filename, lambda storage, loc: storage)
     except BaseException:
@@ -413,6 +439,7 @@ def load(filename, pretrain, charmodel_forward, charmodel_backward):
         extra_vocab = checkpoint.get('extra_vocab', None)
         model = CNNClassifier(pretrain=pretrain,
                               extra_vocab=extra_vocab,
+                              elmo_model=elmo_model,
                               labels=checkpoint['labels'],
                               charmodel_forward=charmodel_forward,
                               charmodel_backward=charmodel_backward,
