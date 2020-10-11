@@ -158,8 +158,11 @@ class CNNClassifier(nn.Module):
 
         if self.config.use_elmo:
             # TODO: add the ability to map this to a different dimension?
+            # TODO: could precache elmo values for training
             elmo_dim = elmo_model.sents2elmo([["Test"]])[0].shape[1]
             total_embedding_dim = total_embedding_dim + elmo_dim
+            # this mapping will combine 3 layers of elmo to 1 layer of features
+            self.elmo_combine_layers = nn.Linear(in_features=3, out_features=1, bias=False)
 
         self.conv_layers = nn.ModuleList([nn.Conv2d(in_channels=1,
                                                     out_channels=self.config.filter_channels,
@@ -372,9 +375,20 @@ class CNNClassifier(nn.Module):
             all_inputs.append(char_reps_backward)
 
         if self.config.use_elmo:
-            elmo_arrays = self.elmo_model.sents2elmo(elmo_batch_words)
+            # this will be N arrays of 3xMx1024 where M is the number of words
+            # and N is the number of sentences (and 1024 is actually the number of weights)
+            elmo_arrays = self.elmo_model.sents2elmo(elmo_batch_words, output_layer=-2)
             elmo_tensors = [torch.tensor(x).to(device=device) for x in elmo_arrays]
+            # elmo_tensor will now be Nx3xMx1024
             elmo_tensor = torch.stack(elmo_tensors)
+            # Nx1024xMx3
+            elmo_tensor = torch.transpose(elmo_tensor, 1, 3)
+            # NxMx1024x3
+            elmo_tensor = torch.transpose(elmo_tensor, 1, 2)
+            # NxMx1024x1
+            elmo_tensor = self.elmo_combine_layers(elmo_tensor)
+            # NxMx1024
+            elmo_tensor = elmo_tensor.squeeze(3)
             all_inputs.append(elmo_tensor)
 
         if len(all_inputs) > 1:
