@@ -89,7 +89,14 @@ Here is an example for training a model in a different language:
 
 nohup python3 -u -m stanza.models.classifier --max_epochs 400 --filter_channels 1000 --fc_shapes 400,100 --base_name FC41_german  --train_file extern_data/sentiment/german/sb-10k/train.txt,extern_data/sentiment/german/scare/train.txt,extern_data/sentiment/USAGE/de-train.txt --dev_file extern_data/sentiment/german/sb-10k/dev.txt --test_file extern_data/sentiment/german/sb-10k/test.txt --shorthand de_sb10k --min_train_len 3 --extra_wordvec_method CONCAT --extra_wordvec_dim 100 > de_sb10k.out 2>&1 &
 
+Chinese:
 nohup python3 -u -m stanza.models.classifier --max_epochs 400 --filter_channels 1000 --fc_shapes 400,100 --base_name FC41_chinese  --train_file extern_data/sentiment/chinese/RenCECps/train.txt --dev_file extern_data/sentiment/chinese/RenCECps/dev.txt --test_file extern_data/sentiment/chinese/RenCECps/test.txt --shorthand zh_ren --wordvec_type fasttext --extra_wordvec_method SUM > zh_ren.out 2>&1 &
+
+Chinese with elmo.  Needs lower batch size on a 2080ti
+nohup python3 -u -m stanza.models.classifier --max_epochs 400 --filter_channels 1000 --fc_shapes 400,100 --base_name FC41_chinese  --train_file extern_data/sentiment/chinese/RenCECps/train.txt --dev_file extern_data/sentiment/chinese/RenCECps/dev.txt --test_file extern_data/sentiment/chinese/RenCECps/test.txt --shorthand zh_ren --wordvec_type fasttext --extra_wordvec_method SUM --use_elmo --elmo_model extern_data/manyelmo/chinese --batch_size 25 --dev_eval_steps 10000 > zh_ren.out 2>&1 &
+
+Testing Chinese model with elmo:
+python3 -u -m stanza.models.classifier --load_name saved_models/classifier/FC41_chinese_zh_ren_FS_3_4_5_C_1000_FC_400_100_classifier.pt --no_train --test_file extern_data/sentiment/chinese/RenCECps/test.txt --shorthand zh_ren --wordvec_type fasttext --use_elmo --elmo_model extern_data/manyelmo/chinese
 """
 
 def convert_fc_shapes(arg):
