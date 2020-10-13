@@ -62,6 +62,7 @@ class CNNClassifier(nn.Module):
         # we build a separate config out of the args so that we can easily save it in torch
         # TODO: this can be removed sometime after all models are rebuilt
         use_elmo = getattr(args, 'use_elmo', False)
+        elmo_projection = getattr(args, 'elmo_projection', None)
         self.config = SimpleNamespace(filter_channels = args.filter_channels,
                                       filter_sizes = args.filter_sizes,
                                       fc_shapes = args.fc_shapes,
@@ -74,6 +75,7 @@ class CNNClassifier(nn.Module):
                                       char_lowercase = args.char_lowercase,
                                       charlm_projection = args.charlm_projection,
                                       use_elmo = use_elmo,
+                                      elmo_projection = elmo_projection,
                                       model_type = 'CNNClassifier')
 
         if args.char_lowercase:
@@ -157,12 +159,15 @@ class CNNClassifier(nn.Module):
                 total_embedding_dim += charmodel_backward.hidden_dim()
 
         if self.config.use_elmo:
-            # TODO: add the ability to map this to a different dimension?
             # TODO: could precache elmo values for training
             elmo_dim = elmo_model.sents2elmo([["Test"]])[0].shape[1]
-            total_embedding_dim = total_embedding_dim + elmo_dim
             # this mapping will combine 3 layers of elmo to 1 layer of features
             self.elmo_combine_layers = nn.Linear(in_features=3, out_features=1, bias=False)
+            if self.config.elmo_projection:
+                self.elmo_projection = nn.Linear(in_features=elmo_dim, out_features=self.config.elmo_projection)
+                total_embedding_dim = total_embedding_dim + self.config.elmo_projection
+            else:
+                total_embedding_dim = total_embedding_dim + elmo_dim
 
         self.conv_layers = nn.ModuleList([nn.Conv2d(in_channels=1,
                                                     out_channels=self.config.filter_channels,
@@ -389,6 +394,8 @@ class CNNClassifier(nn.Module):
             elmo_tensor = self.elmo_combine_layers(elmo_tensor)
             # NxMx1024
             elmo_tensor = elmo_tensor.squeeze(3)
+            if self.config.elmo_projection:
+                elmo_tensor = self.elmo_projection(elmo_tensor)
             all_inputs.append(elmo_tensor)
 
         if len(all_inputs) > 1:

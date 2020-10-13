@@ -176,6 +176,8 @@ def parse_args():
                         help='Directory with elmo model')
     parser.add_argument('--use_elmo', dest='use_elmo', default=False, action='store_true',
                         help='Use an elmo model as a source of parameters')
+    parser.add_argument('--elmo_projection', type=int, default=None,
+                        help='Project elmo to this many dimensions')
 
     args = parser.parse_args()
 
