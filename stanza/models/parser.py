@@ -26,6 +26,7 @@ from stanza.models.depparse.trainer import Trainer
 from stanza.models.depparse import scorer
 from stanza.models.common import utils
 from stanza.models.common.pretrain import Pretrain
+from stanza.models.common.data import augment_punct
 from stanza.models.common.doc import *
 from stanza.utils.conll import CoNLL
 from stanza.models import _training_logging
@@ -136,7 +137,11 @@ def train(args):
     # load data
     print("Loading data with batch size {}...".format(args['batch_size']))
     train_data = CoNLL.conll2dict(input_file=args['train_file'])
-    train_data = data.augment_punct(train_data, args)
+    # possibly augment the training data with some amount of fake data
+    # based on the options chosen
+    train_data = augment_punct(train_data, args['augment_nopunct'],
+                               data.sentence_nopunct_predicate,
+                               data.can_augment_nopunct_predicate)
     train_doc = Document(train_data)
     train_batch = DataLoader(train_doc, args['batch_size'], args, pretrain, evaluation=False)
     vocab = train_batch.vocab

@@ -222,56 +222,17 @@ def to_int(string, ignore_error=False):
     return res
 
 
-def augment_punct(train_data, args):
+def sentence_nopunct_predicate(sentence):
+    last_word = sentence[-1]
+    return last_word[UPOS] != 'PUNCT'
+
+def can_augment_nopunct_predicate(sentence):
     """
-    Adds extra training data to compensate for some models having all sentences end with PUNCT
-
-    Some of the models (for example, UD_Hebrew-HTB) have the flaw that
-    all of the training sentences end with PUNCT.  The model therefore
-    learns to finish every sentence with punctuation, even if it is
-    given a sentence with non-punct at the end.
-
-    One simple way to fix this is to train on some fraction of training data with punct.
-
-    TODO: refactor with tagger, perhaps by passing in a predicate which accepts words to truncate
+    Check that the sentence ends with PUNCT and also doesn't have any words which depend on the last word
     """
-    if len(train_data) == 0:
-        return train_data
-
-    aug = args['augment_nopunct']
-
-    n_nopunct = 0
-    for sentence in train_data:
-        last_word = sentence[-1]
-        if last_word[UPOS] != 'PUNCT':
-            n_nopunct = n_nopunct + 1
-
-    if aug is None:
-        # x = # of sentences with punct
-        #   = len(train_data) - n_nopunct
-        # y = n_nopunct
-        # aug x + y = 0.1 (x + y)
-        # aug = (0.1 (x + y) - y) / x
-        aug = (0.1 * len(train_data) - n_nopunct) / (len(train_data) - n_nopunct)
-        logger.info("No-punct augmentation not specified.  Using %.4f to get 10%% training data with no punct at end" % aug)
-
-    if aug <= 0:
-        return train_data
-
-    new_data = list(train_data)
-
-    for sentence in train_data:
-        last_word = sentence[-1]
-        if random.random() < aug:
-            if last_word[UPOS] != 'PUNCT':
-                continue
-            if any(len(word[ID]) == 1 and word[HEAD] == last_word[ID][0] for word in sentence):
-                continue
-            # todo: could deep copy the words
-            #       or not deep copy any of this
-            new_sentence = list(sentence[:-1])
-            new_data.append(new_sentence)
-
-    logger.info("Augmenting dataset with non-punct-ending sentences.  Original length %d, with %d no-punct" % (len(train_data), n_nopunct))
-    logger.info("Added %d additional sentences.  New total length %d" % (len(new_data) - len(train_data), len(new_data)))
-    return new_data
+    last_word = sentence[-1]
+    if last_word[UPOS] != 'PUNCT':
+        return False
+    if any(len(word[ID]) == 1 and word[HEAD] == last_word[ID][0] for word in sentence):
+        return False
+    return True
